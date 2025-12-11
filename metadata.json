@@ -1,0 +1,5 @@
+{
+  "name": "AIS Hospital Orchestrator",
+  "description": "An AI-powered Hospital ERP demonstration focusing on Segregation of Duties (SOD) and Agent Orchestration using Gemini API.",
+  "requestFramePermissions": []
+}

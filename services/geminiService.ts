@@ -4,20 +4,24 @@ import { GeminiResponse } from '../types';
 
 let chatSession: any = null;
 
-export const initializeChat = async () => {
+export const initializeChat = async (userApiKey?: string) => {
   try {
-    // Safely retrieve API Key to prevent "process is not defined" crash in browser
+    // 1. Try to get key from Environment (Build time)
     let apiKey = '';
     try {
       apiKey = process.env.API_KEY || '';
     } catch (e) {
-      // Ignore ReferenceError if process is not defined in the environment
-      console.warn("Environment variable access failed, running in simulation mode.");
+      // Ignore env error
+    }
+
+    // 2. If env key is missing, use the user-provided key from UI
+    if (!apiKey && userApiKey) {
+      apiKey = userApiKey;
     }
 
     if (!apiKey) {
-      console.warn("API Key is missing. The app will run in simulation mode but network calls will fail.");
-      return;
+      console.warn("API Key is missing.");
+      return false; // Return false to indicate initialization failed
     }
 
     const ai = new GoogleGenAI({ apiKey });
@@ -28,20 +32,22 @@ export const initializeChat = async () => {
       config: {
         systemInstruction: SYSTEM_INSTRUCTION,
         tools: [{ functionDeclarations: TOOLS }],
-        temperature: 0.2, // Low temperature for strict adherence to protocols
+        temperature: 0.2, 
       },
     });
+    
+    return true; // Success
 
   } catch (error) {
     console.error("Failed to initialize Gemini:", error);
+    return false;
   }
 };
 
 export const sendMessageToGemini = async (message: string): Promise<GeminiResponse> => {
   if (!chatSession) {
-    // Fallback if API key is missing or init failed - simplistic mock
     return {
-      text: "Error: API Key missing or connection failed. Please check your configuration.",
+      text: "⚠️ Error: Sesi chat belum terinisialisasi. Pastikan API Key valid telah dimasukkan.",
     };
   }
 
@@ -63,7 +69,7 @@ export const sendMessageToGemini = async (message: string): Promise<GeminiRespon
 
   } catch (error) {
     console.error("Gemini API Error:", error);
-    return { text: "System Error: Could not reach the Orchestrator." };
+    return { text: "Maaf, terjadi kesalahan koneksi ke AI. Silakan coba lagi." };
   }
 };
 
@@ -71,7 +77,6 @@ export const sendToolResponseToGemini = async (functionName: string, result: str
   if (!chatSession) return "Error: No session.";
 
   try {
-    // Send the result of the tool execution back to the model
     const response: GenerateContentResponse = await chatSession.sendMessage({
       message: [
         {

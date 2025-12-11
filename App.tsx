@@ -1,8 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { Send, User, Bot, Activity } from 'lucide-react';
+import { Send, User, Bot, Activity, KeyRound, Loader2 } from 'lucide-react';
 import AgentCard from './components/AgentCard';
-import AuditLog from './components/AuditLog';
-import { AgentType, Message, AuditLogEntry } from './types';
+import { AgentType, Message } from './types';
 import { AGENTS, MOCK_DB } from './constants';
 import { initializeChat, sendMessageToGemini, sendToolResponseToGemini } from './services/geminiService';
 
@@ -18,31 +17,41 @@ const App: React.FC = () => {
   const [inputValue, setInputValue] = useState('');
   const [activeAgent, setActiveAgent] = useState<AgentType>(AgentType.ORCHESTRATOR);
   const [isProcessing, setIsProcessing] = useState(false);
-  const [logs, setLogs] = useState<AuditLogEntry[]>([]);
   const messagesEndRef = useRef<HTMLDivElement>(null);
+
+  // API Key State handling
+  const [needsApiKey, setNeedsApiKey] = useState(false);
+  const [userApiKey, setUserApiKey] = useState('');
+  const [isInitializing, setIsInitializing] = useState(true);
 
   // Initialize Gemini on mount
   useEffect(() => {
-    initializeChat();
-    addLog(AgentType.ORCHESTRATOR, "System Initialization", "System online and ready.");
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+    const init = async () => {
+      const success = await initializeChat();
+      if (!success) {
+        setNeedsApiKey(true);
+      }
+      setIsInitializing(false);
+    };
+    init();
   }, []);
+
+  const handleSetApiKey = async () => {
+    if (!userApiKey.trim()) return;
+    setIsInitializing(true);
+    const success = await initializeChat(userApiKey);
+    if (success) {
+      setNeedsApiKey(false);
+    } else {
+      alert("Gagal menginisialisasi dengan Key tersebut. Mohon periksa kembali.");
+    }
+    setIsInitializing(false);
+  };
 
   // Auto-scroll chat
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [messages]);
-
-  const addLog = (agent: AgentType, action: string, details: string) => {
-    setLogs(prev => [{
-      id: Math.random().toString(36).substr(2, 9),
-      timestamp: new Date().toISOString(),
-      agent,
-      action,
-      details,
-      status: 'SUCCESS'
-    }, ...prev]);
-  };
 
   const handleSendMessage = async () => {
     if (!inputValue.trim() || isProcessing) return;
@@ -53,7 +62,6 @@ const App: React.FC = () => {
     
     setIsProcessing(true);
     setActiveAgent(AgentType.ORCHESTRATOR);
-    addLog(AgentType.ORCHESTRATOR, "Inbound Request", `Analyzing User Intent: "${userMsg.substring(0, 30)}..."`);
 
     try {
       // 1. Send to Orchestrator
@@ -89,13 +97,9 @@ const App: React.FC = () => {
 
         // VISUALIZE: Switch active agent
         setActiveAgent(targetAgent);
-        addLog(AgentType.ORCHESTRATOR, "Dispatch Event", `Routing to ${targetAgent}`);
         
         // Simulate Network Delay for Effect
         await new Promise(resolve => setTimeout(resolve, 1500));
-        
-        // Log Agent Action
-        addLog(targetAgent, "Data Processing", `Executing Tool: ${toolName}`);
         
         // 3. Send Tool Response back to Gemini
         const finalResText = await sendToolResponseToGemini(toolName, mockResponse);
@@ -106,19 +110,17 @@ const App: React.FC = () => {
           role: 'model', 
           content: finalResText, 
           timestamp: new Date(),
-          agent: AgentType.ORCHESTRATOR // The orchestrator delivers the final summary
+          agent: AgentType.ORCHESTRATOR 
         }]);
-        addLog(AgentType.ORCHESTRATOR, "Response Delivery", "Consolidated response sent to user.");
 
       } else {
-        // Direct response (Orchestrator couldn't dispatch or asked for clarification)
+        // Direct response
         setMessages(prev => [...prev, { 
           role: 'model', 
           content: orchestratorRes.text, 
           timestamp: new Date(),
           agent: AgentType.ORCHESTRATOR
         }]);
-        addLog(AgentType.ORCHESTRATOR, "Direct Response", "Request clarification or general inquiry.");
       }
 
     } catch (error) {
@@ -137,32 +139,75 @@ const App: React.FC = () => {
     }
   };
 
+  // API Key Modal
+  if (needsApiKey) {
+    return (
+      <div className="flex h-screen items-center justify-center bg-slate-100 p-4">
+        <div className="bg-white p-8 rounded-2xl shadow-xl max-w-md w-full border border-slate-200">
+          <div className="flex justify-center mb-6">
+            <div className="p-4 bg-blue-100 rounded-full text-blue-600">
+              <KeyRound size={32} />
+            </div>
+          </div>
+          <h2 className="text-2xl font-bold text-center text-slate-800 mb-2">Setup Required</h2>
+          <p className="text-slate-500 text-center mb-6 text-sm">
+            Untuk memulai demo AIS Hospital Orchestrator, silakan masukkan <strong>Google Gemini API Key</strong> Anda.
+          </p>
+          <div className="space-y-4">
+            <input
+              type="password"
+              value={userApiKey}
+              onChange={(e) => setUserApiKey(e.target.value)}
+              placeholder="Paste API Key here (starts with AIza...)"
+              className="w-full px-4 py-3 rounded-lg border border-slate-300 focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none transition-all"
+            />
+            <button
+              onClick={handleSetApiKey}
+              disabled={isInitializing || !userApiKey}
+              className="w-full bg-blue-600 hover:bg-blue-700 disabled:bg-slate-300 text-white font-semibold py-3 rounded-lg transition-colors flex items-center justify-center gap-2"
+            >
+              {isInitializing ? <Loader2 className="animate-spin" size={20} /> : "Start System"}
+            </button>
+          </div>
+          <p className="mt-4 text-xs text-center text-slate-400">
+            Key Anda hanya disimpan di browser sementara (session) dan tidak dikirim ke server lain.
+            <br/> <a href="https://aistudio.google.com/app/apikey" target="_blank" rel="noreferrer" className="text-blue-500 hover:underline">Dapatkan API Key Gratis di sini.</a>
+          </p>
+        </div>
+      </div>
+    );
+  }
+
   return (
-    <div className="flex h-screen bg-slate-100 text-slate-800 font-sans overflow-hidden">
+    <div className="flex h-screen bg-slate-50 text-slate-800 font-sans overflow-hidden justify-center">
       
-      {/* LEFT COLUMN: Orchestrator Viz & Chat */}
-      <div className="flex-1 flex flex-col p-6 gap-6 max-w-4xl mx-auto w-full">
+      {/* Main Container - Centered and now wider without the sidebar */}
+      <div className="flex flex-col p-4 md:p-6 gap-6 w-full max-w-5xl h-full">
         
         {/* Header */}
-        <header className="flex justify-between items-center">
+        <header className="flex justify-between items-center shrink-0">
           <div>
             <h1 className="text-2xl font-bold text-slate-800 flex items-center gap-2">
               <Activity className="text-blue-600" />
               AIS Hospital ERP
             </h1>
-            <p className="text-slate-500 text-sm">AI-Enhanced Segregation of Duties Architecture</p>
+            <p className="text-slate-500 text-sm hidden md:block">AI-Enhanced Segregation of Duties Architecture</p>
           </div>
-          <div className="bg-blue-100 text-blue-800 px-3 py-1 rounded-full text-xs font-semibold uppercase tracking-wide">
+          <div className="bg-blue-100 text-blue-800 px-3 py-1 rounded-full text-xs font-semibold uppercase tracking-wide flex items-center gap-2">
+            <span className="relative flex h-2 w-2">
+              <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-blue-400 opacity-75"></span>
+              <span className="relative inline-flex rounded-full h-2 w-2 bg-blue-500"></span>
+            </span>
             System Online
           </div>
         </header>
 
         {/* Visualization Area */}
-        <div className="bg-white rounded-2xl p-6 shadow-sm border border-slate-200 relative min-h-[220px] flex flex-col items-center justify-between">
-            <h3 className="absolute top-4 left-4 text-xs font-bold text-slate-400 uppercase tracking-widest">Live Orchestration Topology</h3>
+        <div className="bg-white rounded-2xl p-6 shadow-sm border border-slate-200 relative min-h-[200px] flex flex-col items-center justify-between shrink-0">
+            <h3 className="absolute top-4 left-4 text-xs font-bold text-slate-400 uppercase tracking-widest hidden md:block">Live Orchestration Topology</h3>
             
             {/* Top Node: Orchestrator */}
-            <div className="mb-8 z-10 w-full flex justify-center">
+            <div className="mb-6 z-10 w-full flex justify-center">
               <div className="w-64">
                  <AgentCard 
                     config={AGENTS[AgentType.ORCHESTRATOR]} 
@@ -172,8 +217,8 @@ const App: React.FC = () => {
               </div>
             </div>
 
-            {/* Connecting Lines (SVG) */}
-            <svg className="absolute top-[90px] left-0 w-full h-24 pointer-events-none z-0 overflow-visible" stroke="rgb(226, 232, 240)">
+            {/* Connecting Lines (SVG) - Adjusted for responsivity */}
+            <svg className="absolute top-[80px] left-0 w-full h-24 pointer-events-none z-0 overflow-visible hidden md:block" stroke="rgb(226, 232, 240)">
                <line x1="50%" y1="0" x2="15%" y2="100%" strokeWidth="2" />
                <line x1="50%" y1="0" x2="38%" y2="100%" strokeWidth="2" />
                <line x1="50%" y1="0" x2="62%" y2="100%" strokeWidth="2" />
@@ -181,28 +226,28 @@ const App: React.FC = () => {
             </svg>
 
             {/* Bottom Nodes: Specialists */}
-            <div className="flex justify-between w-full gap-2 z-10 px-4">
-               <div className="w-1/4">
+            <div className="grid grid-cols-2 md:flex md:justify-between w-full gap-2 md:gap-4 z-10 md:px-4">
+               <div className="md:w-1/4">
                  <AgentCard config={AGENTS[AgentType.MEDICAL_RECORDS]} isActive={activeAgent === AgentType.MEDICAL_RECORDS} isProcessing={activeAgent === AgentType.MEDICAL_RECORDS} />
                </div>
-               <div className="w-1/4">
+               <div className="md:w-1/4">
                  <AgentCard config={AGENTS[AgentType.BILLING]} isActive={activeAgent === AgentType.BILLING} isProcessing={activeAgent === AgentType.BILLING} />
                </div>
-               <div className="w-1/4">
+               <div className="md:w-1/4">
                  <AgentCard config={AGENTS[AgentType.REGISTRATION]} isActive={activeAgent === AgentType.REGISTRATION} isProcessing={activeAgent === AgentType.REGISTRATION} />
                </div>
-               <div className="w-1/4">
+               <div className="md:w-1/4">
                  <AgentCard config={AGENTS[AgentType.APPOINTMENTS]} isActive={activeAgent === AgentType.APPOINTMENTS} isProcessing={activeAgent === AgentType.APPOINTMENTS} />
                </div>
             </div>
         </div>
 
         {/* Chat Area */}
-        <div className="flex-1 bg-white rounded-2xl shadow-sm border border-slate-200 flex flex-col overflow-hidden">
+        <div className="flex-1 bg-white rounded-2xl shadow-sm border border-slate-200 flex flex-col overflow-hidden min-h-0">
           <div className="flex-1 overflow-y-auto p-6 space-y-4 scrollbar-hide">
             {messages.map((msg, idx) => (
               <div key={idx} className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}>
-                <div className={`flex gap-3 max-w-[80%] ${msg.role === 'user' ? 'flex-row-reverse' : ''}`}>
+                <div className={`flex gap-3 max-w-[90%] md:max-w-[80%] ${msg.role === 'user' ? 'flex-row-reverse' : ''}`}>
                   <div className={`w-8 h-8 rounded-full flex items-center justify-center shrink-0 ${
                     msg.role === 'user' ? 'bg-slate-200 text-slate-600' : 'bg-blue-600 text-white'
                   }`}>
@@ -223,7 +268,10 @@ const App: React.FC = () => {
             ))}
             {isProcessing && activeAgent === AgentType.ORCHESTRATOR && (
               <div className="flex justify-start">
-                 <div className="text-xs text-slate-400 italic ml-12">System is analyzing requirements...</div>
+                 <div className="flex items-center gap-2 text-xs text-slate-400 italic ml-12 bg-slate-50 px-3 py-1 rounded-full">
+                    <Loader2 size={12} className="animate-spin" />
+                    System is analyzing requirements...
+                 </div>
               </div>
             )}
             <div ref={messagesEndRef} />
@@ -237,7 +285,7 @@ const App: React.FC = () => {
                 value={inputValue}
                 onChange={(e) => setInputValue(e.target.value)}
                 onKeyDown={handleKeyDown}
-                placeholder="Ex: 'Saya ingin mendaftarkan pasien baru' or 'Berapa tagihan untuk John Doe?'"
+                placeholder="Ex: 'Saya ingin mendaftarkan pasien baru'..."
                 className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all"
                 disabled={isProcessing}
               />
@@ -246,7 +294,7 @@ const App: React.FC = () => {
                 disabled={!inputValue.trim() || isProcessing}
                 className="bg-blue-600 hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed text-white p-3 rounded-xl transition-colors shadow-md"
               >
-                <Send size={18} />
+                {isProcessing ? <Loader2 size={18} className="animate-spin" /> : <Send size={18} />}
               </button>
             </div>
             <div className="mt-2 text-center">
@@ -255,28 +303,6 @@ const App: React.FC = () => {
           </div>
         </div>
 
-      </div>
-
-      {/* RIGHT COLUMN: Audit Log */}
-      <div className="w-80 bg-white border-l border-slate-200 p-0 hidden xl:block shadow-xl z-20">
-         <AuditLog logs={logs} />
-         
-         <div className="p-4 border-t border-slate-200 bg-slate-50">
-           <h4 className="text-xs font-bold text-slate-500 uppercase mb-3">System Capabilities</h4>
-           <ul className="space-y-2">
-             {[
-               "Natural Language Intent Analysis",
-               "Strict Segregation of Duties",
-               "HIPAA-Ready Logging",
-               "Automated Tool Dispatching",
-               "Mock RCM & FHIR Database"
-             ].map((item, i) => (
-               <li key={i} className="text-xs text-slate-600 flex items-center gap-2">
-                 <span className="w-1.5 h-1.5 bg-green-500 rounded-full" /> {item}
-               </li>
-             ))}
-           </ul>
-         </div>
       </div>
 
     </div>

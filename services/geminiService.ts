@@ -6,7 +6,15 @@ let chatSession: any = null;
 
 export const initializeChat = async () => {
   try {
-    const apiKey = process.env.API_KEY || '';
+    // Safely retrieve API Key to prevent "process is not defined" crash in browser
+    let apiKey = '';
+    try {
+      apiKey = process.env.API_KEY || '';
+    } catch (e) {
+      // Ignore ReferenceError if process is not defined in the environment
+      console.warn("Environment variable access failed, running in simulation mode.");
+    }
+
     if (!apiKey) {
       console.warn("API Key is missing. The app will run in simulation mode but network calls will fail.");
       return;

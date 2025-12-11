@@ -5,6 +5,8 @@ import { AgentType, Message } from './types';
 import { AGENTS, MOCK_DB } from './constants';
 import { initializeChat, sendMessageToGemini, sendToolResponseToGemini } from './services/geminiService';
 
+const STORAGE_KEY = 'gemini_api_key_v1';
+
 const App: React.FC = () => {
   const [messages, setMessages] = useState<Message[]>([
     {
@@ -24,11 +26,22 @@ const App: React.FC = () => {
   const [userApiKey, setUserApiKey] = useState('');
   const [isInitializing, setIsInitializing] = useState(true);
 
-  // Initialize Gemini on mount
+  // Initialize Gemini on mount with persistence check
   useEffect(() => {
     const init = async () => {
-      const success = await initializeChat();
-      if (!success) {
+      // 1. Try Local Storage first (for deployed apps usability)
+      const storedKey = localStorage.getItem(STORAGE_KEY);
+      if (storedKey) {
+        const success = await initializeChat(storedKey);
+        if (success) {
+          setIsInitializing(false);
+          return;
+        }
+      }
+
+      // 2. Try Environment Variable (via default init)
+      const successEnv = await initializeChat();
+      if (!successEnv) {
         setNeedsApiKey(true);
       }
       setIsInitializing(false);
@@ -39,8 +52,11 @@ const App: React.FC = () => {
   const handleSetApiKey = async () => {
     if (!userApiKey.trim()) return;
     setIsInitializing(true);
+    
     const success = await initializeChat(userApiKey);
     if (success) {
+      // Save to storage for convenience
+      localStorage.setItem(STORAGE_KEY, userApiKey);
       setNeedsApiKey(false);
     } else {
       alert("Gagal menginisialisasi dengan Key tersebut. Mohon periksa kembali.");
@@ -49,6 +65,7 @@ const App: React.FC = () => {
   };
 
   const handleResetKey = () => {
+     localStorage.removeItem(STORAGE_KEY); // Clear storage
      setUserApiKey('');
      setNeedsApiKey(true);
      setMessages([{
@@ -181,7 +198,7 @@ const App: React.FC = () => {
             </button>
           </div>
           <p className="mt-4 text-xs text-center text-slate-400">
-            Key Anda hanya disimpan di browser sementara (session) dan tidak dikirim ke server lain.
+            Key Anda disimpan aman di browser (Local Storage) agar Anda tidak perlu login ulang saat deploy.
             <br/> <a href="https://aistudio.google.com/app/apikey" target="_blank" rel="noreferrer" className="text-blue-500 hover:underline">Dapatkan API Key Gratis di sini.</a>
           </p>
         </div>

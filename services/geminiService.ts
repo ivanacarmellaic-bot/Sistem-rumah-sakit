@@ -5,30 +5,42 @@ import { GeminiResponse } from '../types';
 let chatSession: any = null;
 let currentApiKey: string = '';
 
+// Helper to safely get API Key from various sources
+const getEnvironmentApiKey = (): string => {
+  try {
+    // 1. Check window.process (polyfill from index.html)
+    if ((window as any).process?.env?.API_KEY) return (window as any).process.env.API_KEY;
+    // 2. Check bundler injected process
+    // @ts-ignore
+    if (typeof process !== 'undefined' && process.env?.API_KEY) return process.env.API_KEY;
+  } catch (e) {
+    return '';
+  }
+  return '';
+};
+
 export const initializeChat = async (userApiKey?: string) => {
   try {
-    // 1. Try to get key from Environment (Build time)
     let apiKey = '';
-    try {
-      apiKey = (window as any).process?.env?.API_KEY || process.env.API_KEY || '';
-    } catch (e) {
-      // Ignore env error
-    }
-
-    // 2. If env key is missing, use the user-provided key from UI
-    if (!apiKey && userApiKey) {
+    
+    // 1. Prioritize User Input (passed arg)
+    if (userApiKey) {
       apiKey = userApiKey;
+    } 
+    // 2. Fallback to Environment Variable
+    else {
+      apiKey = getEnvironmentApiKey();
     }
 
     if (!apiKey) {
       console.warn("API Key is missing.");
-      return false; // Return false to indicate initialization failed
+      return false; 
     }
 
-    currentApiKey = apiKey;
+    // Initialize Client
     const ai = new GoogleGenAI({ apiKey });
     
-    // Create a persistent chat session
+    // Create Chat Session
     chatSession = ai.chats.create({
       model: 'gemini-2.5-flash',
       config: {
@@ -38,8 +50,9 @@ export const initializeChat = async (userApiKey?: string) => {
       },
     });
     
-    console.log("Gemini Chat Session Initialized with model: gemini-2.5-flash");
-    return true; // Success
+    currentApiKey = apiKey;
+    console.log("Gemini Chat Session Initialized successfully.");
+    return true; 
 
   } catch (error) {
     console.error("Failed to initialize Gemini:", error);
@@ -49,9 +62,16 @@ export const initializeChat = async (userApiKey?: string) => {
 
 export const sendMessageToGemini = async (message: string): Promise<GeminiResponse> => {
   if (!chatSession) {
-    return {
-      text: "⚠️ Error: Sesi chat belum terinisialisasi. Silakan refresh halaman dan masukkan API Key yang valid.",
-    };
+    // Try to recover session if apiKey is available in memory
+    if (currentApiKey) {
+       await initializeChat(currentApiKey);
+    }
+    
+    if (!chatSession) {
+        return {
+          text: "⚠️ Sesi terputus. Mohon refresh halaman atau masukkan ulang API Key.",
+        };
+    }
   }
 
   try {
@@ -75,21 +95,13 @@ export const sendMessageToGemini = async (message: string): Promise<GeminiRespon
     
     let errorMessage = "Maaf, terjadi kesalahan koneksi ke AI.";
     
-    // Extract useful error info
+    // Friendly Error Messages
     if (error.message) {
-        if (error.message.includes("400")) {
-             errorMessage += " (Error 400: Permintaan tidak valid. Kemungkinan format data atau API Key bermasalah.)";
-        } else if (error.message.includes("403")) {
-             errorMessage += " (Error 403: Akses ditolak. API Key mungkin tidak valid atau tidak memiliki izin untuk model ini.)";
-        } else if (error.message.includes("404")) {
-             errorMessage += " (Error 404: Model tidak ditemukan. Coba gunakan API Key yang mendukung Gemini 2.5 Flash.)";
-        } else {
-             errorMessage += ` (${error.message})`;
-        }
-    } else if (error.status) {
-        errorMessage += ` (Status Code: ${error.status})`;
-    } else {
-        errorMessage += " Silakan periksa koneksi internet atau API Key Anda.";
+        if (error.message.includes("400")) errorMessage = "⚠️ Permintaan tidak valid (Error 400). Cek API Key Anda.";
+        else if (error.message.includes("403")) errorMessage = "⛔ Akses ditolak (Error 403). API Key tidak valid atau lokasi diblokir.";
+        else if (error.message.includes("404")) errorMessage = "❌ Model tidak ditemukan (Error 404).";
+        else if (error.message.includes("Failed to fetch")) errorMessage = "🌐 Gagal terhubung. Periksa koneksi internet Anda.";
+        else errorMessage = `⚠️ Error: ${error.message}`;
     }
 
     return { text: errorMessage };
@@ -115,6 +127,6 @@ export const sendToolResponseToGemini = async (functionName: string, result: str
 
   } catch (error: any) {
     console.error("Tool Response Error:", error);
-    return `Error processing tool result: ${error.message || 'Unknown error'}`;
+    return `Error processing tool result: ${error.message}`;
   }
 };

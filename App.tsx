@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { Send, User, Bot, Activity, KeyRound, Loader2 } from 'lucide-react';
+import { Send, User, Bot, Activity, KeyRound, Loader2, RotateCcw } from 'lucide-react';
 import AgentCard from './components/AgentCard';
 import { AgentType, Message } from './types';
 import { AGENTS, MOCK_DB } from './constants';
@@ -46,6 +46,17 @@ const App: React.FC = () => {
       alert("Gagal menginisialisasi dengan Key tersebut. Mohon periksa kembali.");
     }
     setIsInitializing(false);
+  };
+
+  const handleResetKey = () => {
+     setUserApiKey('');
+     setNeedsApiKey(true);
+     setMessages([{
+        role: 'system',
+        content: "Sistem di-reset. Silakan masukkan API Key baru.",
+        timestamp: new Date(),
+        agent: AgentType.ORCHESTRATOR
+     }]);
   };
 
   // Auto-scroll chat
@@ -193,12 +204,21 @@ const App: React.FC = () => {
             </h1>
             <p className="text-slate-500 text-sm hidden md:block">AI-Enhanced Segregation of Duties Architecture</p>
           </div>
-          <div className="bg-blue-100 text-blue-800 px-3 py-1 rounded-full text-xs font-semibold uppercase tracking-wide flex items-center gap-2">
-            <span className="relative flex h-2 w-2">
-              <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-blue-400 opacity-75"></span>
-              <span className="relative inline-flex rounded-full h-2 w-2 bg-blue-500"></span>
-            </span>
-            System Online
+          <div className="flex items-center gap-3">
+             <button 
+               onClick={handleResetKey}
+               className="text-slate-400 hover:text-slate-600 p-2 rounded-full hover:bg-slate-100 transition-colors"
+               title="Reset API Key"
+             >
+                <RotateCcw size={18} />
+             </button>
+             <div className="bg-blue-100 text-blue-800 px-3 py-1 rounded-full text-xs font-semibold uppercase tracking-wide flex items-center gap-2">
+                <span className="relative flex h-2 w-2">
+                  <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-blue-400 opacity-75"></span>
+                  <span className="relative inline-flex rounded-full h-2 w-2 bg-blue-500"></span>
+                </span>
+                System Online
+             </div>
           </div>
         </header>
 

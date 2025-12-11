@@ -17,6 +17,10 @@
           scrollbar-width: none;
       }
     </style>
+    <script>
+      // Polyfill for process/env in browser
+      window.process = { env: { NODE_ENV: 'production' } };
+    </script>
   <script type="importmap">
 {
   "imports": {

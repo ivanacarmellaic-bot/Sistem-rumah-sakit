@@ -3,13 +3,14 @@ import { TOOLS, SYSTEM_INSTRUCTION } from '../constants';
 import { GeminiResponse } from '../types';
 
 let chatSession: any = null;
+let currentApiKey: string = '';
 
 export const initializeChat = async (userApiKey?: string) => {
   try {
     // 1. Try to get key from Environment (Build time)
     let apiKey = '';
     try {
-      apiKey = process.env.API_KEY || '';
+      apiKey = (window as any).process?.env?.API_KEY || process.env.API_KEY || '';
     } catch (e) {
       // Ignore env error
     }
@@ -24,6 +25,7 @@ export const initializeChat = async (userApiKey?: string) => {
       return false; // Return false to indicate initialization failed
     }
 
+    currentApiKey = apiKey;
     const ai = new GoogleGenAI({ apiKey });
     
     // Create a persistent chat session
@@ -36,6 +38,7 @@ export const initializeChat = async (userApiKey?: string) => {
       },
     });
     
+    console.log("Gemini Chat Session Initialized with model: gemini-2.5-flash");
     return true; // Success
 
   } catch (error) {
@@ -47,7 +50,7 @@ export const initializeChat = async (userApiKey?: string) => {
 export const sendMessageToGemini = async (message: string): Promise<GeminiResponse> => {
   if (!chatSession) {
     return {
-      text: "⚠️ Error: Sesi chat belum terinisialisasi. Pastikan API Key valid telah dimasukkan.",
+      text: "⚠️ Error: Sesi chat belum terinisialisasi. Silakan refresh halaman dan masukkan API Key yang valid.",
     };
   }
 
@@ -67,9 +70,29 @@ export const sendMessageToGemini = async (message: string): Promise<GeminiRespon
       functionCalls: functionCalls && functionCalls.length > 0 ? functionCalls : undefined
     };
 
-  } catch (error) {
+  } catch (error: any) {
     console.error("Gemini API Error:", error);
-    return { text: "Maaf, terjadi kesalahan koneksi ke AI. Silakan coba lagi." };
+    
+    let errorMessage = "Maaf, terjadi kesalahan koneksi ke AI.";
+    
+    // Extract useful error info
+    if (error.message) {
+        if (error.message.includes("400")) {
+             errorMessage += " (Error 400: Permintaan tidak valid. Kemungkinan format data atau API Key bermasalah.)";
+        } else if (error.message.includes("403")) {
+             errorMessage += " (Error 403: Akses ditolak. API Key mungkin tidak valid atau tidak memiliki izin untuk model ini.)";
+        } else if (error.message.includes("404")) {
+             errorMessage += " (Error 404: Model tidak ditemukan. Coba gunakan API Key yang mendukung Gemini 2.5 Flash.)";
+        } else {
+             errorMessage += ` (${error.message})`;
+        }
+    } else if (error.status) {
+        errorMessage += ` (Status Code: ${error.status})`;
+    } else {
+        errorMessage += " Silakan periksa koneksi internet atau API Key Anda.";
+    }
+
+    return { text: errorMessage };
   }
 };
 
@@ -90,8 +113,8 @@ export const sendToolResponseToGemini = async (functionName: string, result: str
     
     return response.text || "No response text generated.";
 
-  } catch (error) {
+  } catch (error: any) {
     console.error("Tool Response Error:", error);
-    return "Error processing tool result.";
+    return `Error processing tool result: ${error.message || 'Unknown error'}`;
   }
 };
